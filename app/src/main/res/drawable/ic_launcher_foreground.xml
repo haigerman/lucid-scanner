@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Ein Blatt mit Eselsohr, darüber die leuchtende Scan-Linie -->
+    <!-- Blatt -->
+    <path android:strokeColor="#FF8CC7C4" android:strokeWidth="4.0" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M41,32 L60,32 L69,41 L69,76 L41,76 Z M60,32 L60,41 L69,41" />
+    <!-- Textzeilen -->
+    <path android:strokeColor="#FF7FD1AE" android:strokeWidth="3.0" android:strokeLineCap="round"
+        android:pathData="M47,46 L55,46 M47,64 L63,64 M47,70 L58,70" />
+    <!-- Lichthof der Scan-Linie -->
+    <path android:strokeColor="#4DE8C77A" android:strokeWidth="10.0" android:strokeLineCap="round"
+        android:pathData="M33,55 L75,55" />
+    <!-- Scan-Linie -->
+    <path android:strokeColor="#FFE8C77A" android:strokeWidth="4.0" android:strokeLineCap="round"
+        android:pathData="M31,55 L77,55" />
+    <!-- Endpunkte -->
+    <path android:fillColor="#FFFF8A65" android:pathData="M31,55 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M77,55 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>
