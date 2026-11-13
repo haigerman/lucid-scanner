@@ -124,15 +124,15 @@ object ScanRepository {
         return result
     }
 
-    /** Legt das PDF in OpenCloud ab. Wirft [io.github.haigerman.lucidscanner.cloud.OpenCloudException] mit verständlicher Meldung. */
-    suspend fun upload(name: String, onProgress: (Float) -> Unit): String {
+    /** Legt das PDF im Ordner [folder] der OpenCloud ab. Wirft [io.github.haigerman.lucidscanner.cloud.OpenCloudException] mit verständlicher Meldung. */
+    suspend fun upload(name: String, folder: String, onProgress: (Float) -> Unit): String {
         val result = checkNotNull(_pdf.value)
         val config = Settings.config.value
         val fileName = OpenCloudClient.pdfFileName(name, result.defaultName)
         val remote = withContext(Dispatchers.IO) {
-            OpenCloudClient(config.serverUrl, config.user, config.token).upload(config.folder, fileName, result.file, onProgress)
+            OpenCloudClient(config.serverUrl, config.user, config.token).upload(folder, fileName, result.file, onProgress)
         }
-        val entry = HistoryEntry(fileName, result.pageCount, System.currentTimeMillis(), config.destination)
+        val entry = HistoryEntry(fileName, result.pageCount, System.currentTimeMillis(), "${config.host} › ${folderLabel(folder)}")
         _history.update { (listOf(entry) + it).take(20) }
         saveHistory()
         start()

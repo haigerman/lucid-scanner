@@ -21,9 +21,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.haigerman.lucidscanner.data.PdfResult
 import io.github.haigerman.lucidscanner.data.ScanRepository
 import io.github.haigerman.lucidscanner.data.Settings
+import io.github.haigerman.lucidscanner.data.folderLabel
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -65,6 +70,27 @@ fun ReviewScreen(result: PdfResult, onUploaded: (String) -> Unit, onDiscarded: (
     var progress by remember { mutableFloatStateOf(0f) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
+    // Zielauswahl: erst die Favoriten, von dort weiter in den Ordnerbrowser
+    var chooseTarget by remember { mutableStateOf(false) }
+    var browse by remember { mutableStateOf(false) }
+    var target by remember { mutableStateOf("") }
+
+    fun upload(folder: String) {
+        chooseTarget = false
+        browse = false
+        target = folder
+        uploading = true
+        progress = 0f
+        error = null
+        scope.launch {
+            try {
+                onUploaded(ScanRepository.upload(name, folder) { progress = it })
+            } catch (e: Exception) {
+                error = e.message ?: "Ablegen fehlgeschlagen."
+                uploading = false
+            }
+        }
+    }
 
     val preview = remember(result.file) { runCatching { PdfPreview(result.file) }.getOrNull() }
     DisposableEffect(preview) { onDispose { preview?.close() } }
@@ -111,7 +137,7 @@ fun ReviewScreen(result: PdfResult, onUploaded: (String) -> Unit, onDiscarded: (
             ) {
                 when {
                     uploading -> {
-                        Text("Wird in OpenCloud abgelegt …", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Wird abgelegt in ${folderLabel(target)} …", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = { progress },
@@ -121,7 +147,7 @@ fun ReviewScreen(result: PdfResult, onUploaded: (String) -> Unit, onDiscarded: (
                     }
                     error != null -> Text(error.orEmpty(), fontSize = 13.sp, color = Coral)
                     config.complete -> Text(
-                        "Ablage: ${config.destination}", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        "Ablage: ${config.host} – den Ordner wählst du gleich", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     else -> Text("OpenCloud ist noch nicht eingerichtet.", fontSize = 13.sp, color = Coral)
@@ -134,25 +160,20 @@ fun ReviewScreen(result: PdfResult, onUploaded: (String) -> Unit, onDiscarded: (
                         PrimaryButton(
                             if (error != null) "Erneut versuchen" else "In OpenCloud ablegen",
                             Modifier.weight(1f), enabled = !uploading,
-                        ) {
-                            uploading = true
-                            progress = 0f
-                            error = null
-                            scope.launch {
-                                try {
-                                    onUploaded(ScanRepository.upload(name) { progress = it })
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Ablegen fehlgeschlagen."
-                                    uploading = false
-                                }
-                            }
-                        }
+                        ) { chooseTarget = true }
                     } else {
                         PrimaryButton("OpenCloud einrichten", Modifier.weight(1f), onClick = onSettings)
                     }
                 }
             }
         }
+    }
+
+    if (chooseTarget) {
+        TargetSheet(config.favorites, onPick = ::upload, onBrowse = { chooseTarget = false; browse = true }, onDismiss = { chooseTarget = false })
+    }
+    if (browse) {
+        FolderBrowser("Ablegen in …", "Hier ablegen", onPick = ::upload, onDismiss = { browse = false; chooseTarget = true })
     }
 
     if (confirmDiscard) {
@@ -196,3 +217,27 @@ private fun PdfPage(preview: PdfPreview, index: Int) {
 
 private fun fileSize(bytes: Long): String =
     if (bytes < 1_000_000) "${(bytes + 500) / 1000} kB" else String.format(Locale.GERMAN, "%.1f MB", bytes / 1_000_000.0)
+
+/** Fragt nach dem Zielordner: die Favoriten aus den Einstellungen oder „Anderer Ordner …“. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TargetSheet(favorites: List<String>, onPick: (String) -> Unit, onBrowse: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Card) {
+        Column(
+            Modifier.padding(horizontal = 16.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Wohin ablegen?", fontSize = 19.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 8.dp, bottom = 6.dp))
+            for (folder in favorites) {
+                FolderRow("⭐", folderLabel(folder)) { onPick(folder) }
+            }
+            if (favorites.isEmpty()) {
+                Text(
+                    "Noch keine Favoriten – du kannst sie in den Einstellungen anlegen.", fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+            FolderRow("📁", "Anderer Ordner …", onClick = onBrowse)
+        }
+    }
+}

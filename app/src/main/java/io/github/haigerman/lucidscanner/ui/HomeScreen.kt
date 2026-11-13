@@ -85,7 +85,7 @@ fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
                                 Column(Modifier.weight(1f)) {
                                     Text("OpenCloud einrichten", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
                                     Text(
-                                        "Adresse, Benutzername, App-Token und Ordner fehlen noch",
+                                        "Adresse, Benutzername und App-Token fehlen noch",
                                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -126,7 +126,7 @@ fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 Text("Neuer Scan", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    if (config.complete) "Ablage: ${config.destination}" else "OpenCloud ist noch nicht eingerichtet",
+                    if (config.complete) "Ablage: ${config.host}" else "OpenCloud ist noch nicht eingerichtet",
                     fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = if (config.complete) MaterialTheme.colorScheme.onSurfaceVariant else Coral,
                     modifier = Modifier.padding(horizontal = 24.dp),

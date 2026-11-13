@@ -1,6 +1,7 @@
 package io.github.haigerman.lucidscanner.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,16 +12,19 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import io.github.haigerman.lucidscanner.cloud.OpenCloudClient
 import io.github.haigerman.lucidscanner.data.Config
 import io.github.haigerman.lucidscanner.data.Settings
+import io.github.haigerman.lucidscanner.data.folderLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,6 +61,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     var testing by remember { mutableStateOf(false) }
     // Ergebnis der Verbindungsprüfung: Text und ob es geklappt hat
     var testResult by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    var browseFavorite by remember { mutableStateOf(false) }
+    var typeFavorite by remember { mutableStateOf(false) }
+    fun addFavorite(folder: String) {
+        val clean = OpenCloudClient.normalizeFolder(folder)
+        if (clean !in config.favorites) change(config.copy(favorites = config.favorites + clean))
+    }
 
     BackHandler(onBack = onBack)
 
@@ -113,19 +125,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Hint("Den Token erzeugst du in OpenCloud unter Einstellungen → App-Tokens. Er steht zusammen mit dem Benutzernamen für die Anmeldung und wird auf dem Gerät verschlüsselt gespeichert.")
-                        Spacer(Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = config.folder,
-                            onValueChange = { change(config.copy(folder = it)); testResult = null },
-                            label = { Text("Ordner für Scans") },
-                            placeholder = { Text("Dokumente/Scans") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, autoCorrectEnabled = false),
-                            colors = fieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Hint("Pfad im persönlichen Bereich. Fehlt der Ordner, wird er beim ersten Scan angelegt.")
-
                         Spacer(Modifier.height(14.dp))
                         OutlineButton(
                             if (testing) "Prüfe …" else "Verbindung prüfen",
@@ -137,7 +136,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             scope.launch {
                                 testResult = try {
                                     withContext(Dispatchers.IO) {
-                                        OpenCloudClient(config.serverUrl, config.user, config.token).testConnection(config.folder)
+                                        OpenCloudClient(config.serverUrl, config.user, config.token).testConnection()
                                     } to true
                                 } catch (e: Exception) {
                                     (e.message ?: "Verbindung fehlgeschlagen.") to false
@@ -150,6 +149,26 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 (if (ok) "✓  " else "") + text, fontSize = 14.sp, color = if (ok) Mist else Coral,
                                 modifier = Modifier.padding(top = 10.dp),
                             )
+                        }
+                    }
+                }
+
+                Section("Ordner-Favoriten")
+                Surface(color = Card, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Beim Ablegen eines Scans wählst du einen dieser Ordner. Die Pfade gelten im persönlichen Bereich; fehlende Ordner werden angelegt.",
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        for (folder in config.favorites) {
+                            FolderRow("⭐", folderLabel(folder), trailing = {
+                                SymbolButton("✕", "Favorit entfernen") { change(config.copy(favorites = config.favorites - folder)) }
+                            })
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlineButton("＋ Ordner wählen", Modifier.weight(1f), enabled = config.complete) { browseFavorite = true }
+                            Spacer(Modifier.width(10.dp))
+                            OutlineButton("Pfad eingeben", Modifier.weight(1f)) { typeFavorite = true }
                         }
                     }
                 }
@@ -174,6 +193,36 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+
+    if (browseFavorite) {
+        FolderBrowser(
+            "Favorit hinzufügen", "Als Favorit merken",
+            onPick = { addFavorite(it); browseFavorite = false },
+            onDismiss = { browseFavorite = false },
+        )
+    }
+    if (typeFavorite) {
+        var text by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { typeFavorite = false },
+            containerColor = Card,
+            title = { Text("Favorit hinzufügen") },
+            text = {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it }, label = { Text("Ordnerpfad") },
+                    placeholder = { Text("Dokumente/Scans") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, autoCorrectEnabled = false),
+                    colors = fieldColors(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { addFavorite(text); typeFavorite = false }) { Text("Hinzufügen", color = Sand) }
+            },
+            dismissButton = {
+                TextButton(onClick = { typeFavorite = false }) { Text("Abbrechen", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            },
+        )
     }
 }
 

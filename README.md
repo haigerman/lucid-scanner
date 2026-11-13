@@ -1,7 +1,7 @@
 # Lucid Scanner
 
 Android-App, die Papier Blatt für Blatt mit der Handykamera scannt, daraus ein PDF macht und
-es direkt in einem festen Ordner deiner **OpenCloud** ablegt.
+es direkt in deiner **OpenCloud** ablegt – in einem deiner Favoriten-Ordner oder einem beliebigen anderen.
 
 ## So geht ein Scan
 
@@ -12,6 +12,9 @@ es direkt in einem festen Ordner deiner **OpenCloud** ablegt.
 4. **Fertig** antippen. Aus allen Seiten entsteht ein PDF.
 5. **Kontrolle:** Das PDF wird angezeigt, der Dateiname lässt sich noch ändern. Dann
    **Verwerfen** oder **In OpenCloud ablegen**.
+6. **Wohin?** Die App fragt nach dem Zielordner: einer der **Favoriten** – oder
+   **Anderer Ordner …**. Der öffnet den Ordnerbrowser: durch die Ordner der OpenCloud blättern,
+   bei Bedarf mit **＋ Neuer Ordner** einen anlegen, dann **Hier ablegen**.
 
 Gut zu wissen:
 
@@ -34,9 +37,13 @@ In der App unter **⚙ Einstellungen**:
 | **Adresse** | Adresse deiner OpenCloud, z. B. `cloud.example.com` |
 | **Benutzername** | dein OpenCloud-Benutzername |
 | **App-Token** | in OpenCloud unter *Einstellungen → App-Tokens → Neu* erzeugen und hier einfügen |
-| **Ordner für Scans** | Pfad im persönlichen Bereich, z. B. `Dokumente/Scans`; wird bei Bedarf angelegt |
 
 **Verbindung prüfen** zeigt sofort, ob Adresse und Anmeldung stimmen.
+
+Darunter stehen die **Ordner-Favoriten**: Ordner im persönlichen Bereich, die beim Ablegen zur
+Auswahl stehen. **＋ Ordner wählen** öffnet den Ordnerbrowser (dort lässt sich auch ein neuer
+Ordner anlegen), **Pfad eingeben** nimmt einen Pfad wie `Dokumente/Scans` direkt an – fehlt der
+Ordner, wird er beim ersten Ablegen angelegt. **✕** entfernt einen Favoriten wieder.
 
 OpenCloud meldet App-Tokens zusammen mit dem Benutzernamen an – deshalb braucht die App beides.
 Der Token wird auf dem Gerät verschlüsselt gespeichert (Schlüssel im Android-Keystore) und ist
@@ -58,14 +65,15 @@ der Scan bleibt in der Kontrollansicht.
 | `ui/HomeScreen.kt` | Startbildschirm: „Neuer Scan“, zuletzt abgelegte Scans |
 | `ui/CameraScreen.kt` | Kamera mit Blattumriss, Auslöser, „Fertig“ |
 | `ui/ReviewScreen.kt`, `ui/PdfPreview.kt` | Kontrollansicht: zeichnet die Seiten aus der fertigen PDF-Datei |
-| `ui/SettingsScreen.kt` | OpenCloud-Zugang, Ordner, Aufhellen |
+| `ui/SettingsScreen.kt` | OpenCloud-Zugang, Ordner-Favoriten, Aufhellen |
+| `ui/FolderBrowser.kt` | Ordnerbrowser: blättern, neuen Ordner anlegen, auswählen |
 | `scan/ScanCamera.kt` | CameraX: Vorschau, laufende Analyse, Foto |
 | `scan/DocumentDetector.kt` | Findet das Blatt: Schwelle nach Otsu → größte helle Fläche → Viereck mit angepassten Kanten |
 | `scan/CaptureTrigger.kt` | Entscheidet, wann ausgelöst wird (Haltezeit, keine Doppelaufnahmen) |
 | `scan/PageProcessor.kt`, `scan/Perspective.kt` | Foto → Seite: Blatt im Foto finden, entzerren, wahres Seitenverhältnis berechnen |
 | `scan/PageEnhancer.kt` | Schattenausgleich und Weißabgleich des Papiers |
 | `pdf/PdfWriter.kt` | Schreibt das PDF; die JPEG-Seiten werden unverändert eingebettet |
-| `cloud/OpenCloudClient.kt` | WebDAV: persönlichen Bereich finden, Ordner anlegen, hochladen |
+| `cloud/OpenCloudClient.kt` | WebDAV: persönlichen Bereich finden, Ordner auflisten und anlegen, hochladen |
 | `data/Settings.kt`, `data/ScanRepository.kt` | Einstellungen und der laufende Scan |
 
 Blatterkennung, Entzerrung und PDF sind selbst geschrieben – die App braucht weder Google-Dienste

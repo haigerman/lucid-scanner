@@ -48,7 +48,7 @@ class OpenCloudClientTest {
                         val rel = path.removePrefix(space).removePrefix(legacy)
                         val parent = rel.substringBeforeLast('/')
                         when (request.method) {
-                            "PROPFIND" -> reply(if (rel.isEmpty() || rel in folders) 207 else 404, "<d:multistatus xmlns:d=\"DAV:\"/>")
+                            "PROPFIND" -> if (rel.isEmpty() || rel in folders) reply(207, listing(path, rel)) else reply(404)
                             "MKCOL" -> when {
                                 rel in folders -> reply(405)
                                 parent.isNotEmpty() && parent !in folders -> reply(409)
@@ -67,6 +67,17 @@ class OpenCloudClientTest {
             }
         }
         server.start()
+    }
+
+    /** WebDAV-Antwort wie von OpenCloud: der Ordner selbst, seine Unterordner und Dateien. */
+    private fun listing(path: String, rel: String): String {
+        fun entry(href: String, folder: Boolean) =
+            "<d:response><d:href>${href.replace("&", "&amp;")}</d:href><d:propstat><d:prop><d:resourcetype>${if (folder) "<d:collection/>" else ""}</d:resourcetype></d:prop>" +
+                "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+        val base = path.removeSuffix(rel)
+        val children = folders.filter { it.substringBeforeLast('/') == rel }.map { entry("$base$it/", true) } +
+            files.keys.filter { it.substringBeforeLast('/') == rel }.map { entry("$base$it", false) }
+        return "<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\">" + entry("$path/", true) + children.joinToString("") + "</d:multistatus>"
     }
 
     @After fun stop() = server.shutdown()
@@ -131,7 +142,7 @@ class OpenCloudClientTest {
         val port = server.port
         server.shutdown()
         try {
-            OpenCloudClient("http://127.0.0.1:$port", "anna", "geheim-token").testConnection("Scans")
+            OpenCloudClient("http://127.0.0.1:$port", "anna", "geheim-token").testConnection()
             fail()
         } catch (e: OpenCloudException) {
             assertTrue(e.message!!.contains("nicht erreichbar"))
@@ -139,10 +150,40 @@ class OpenCloudClientTest {
     }
 
     @Test fun connectionTest() {
+        assertTrue(OpenCloudClient(url, "anna", "geheim-token").testConnection().contains("steht"))
+    }
+
+    @Test fun browsesAndCreatesFolders() {
         val client = OpenCloudClient(url, "anna", "geheim-token")
-        assertTrue(client.testConnection("Scans").contains("angelegt"))
-        client.upload("Scans", "a.pdf", pdf(1000))
-        assertTrue(client.testConnection("Scans").contains("gefunden"))
+        assertEquals(emptyList<String>(), client.listFolders(""))
+        client.createFolder("Dokumente/Steuer 2026")
+        client.createFolder("Dokumente/Ärzte & Co")
+        client.createFolder("Dokumente/Steuer 2026/Belege")
+        client.createFolder("Dokumente/Steuer 2026") // gibt es schon: kein Fehler
+        client.upload("Dokumente", "a.pdf", pdf(1000))
+        assertEquals(listOf("Dokumente"), client.listFolders("/"))
+        // Dateien und der Ordner selbst tauchen nicht auf; Sonderzeichen kommen lesbar zurück
+        assertEquals(listOf("Ärzte & Co", "Steuer 2026"), client.listFolders("Dokumente"))
+        assertEquals(listOf("Belege"), client.listFolders("Dokumente/Steuer 2026"))
+        try {
+            client.listFolders("Gibt es nicht")
+            fail()
+        } catch (e: OpenCloudException) {
+            assertTrue(e.message!!.contains("gibt es"))
+        }
+    }
+
+    @Test fun parsesListingWithAbsoluteLinksAndOtherPrefix() {
+        val xml = """<?xml version="1.0"?>
+            <D:multistatus xmlns:D="DAV:" xmlns:oc="http://owncloud.org/ns">
+              <D:response><D:href>https://cloud.example.com/remote.php/dav/spaces/abc/Scans/</D:href>
+                <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>
+              <D:response><D:href>https://cloud.example.com/remote.php/dav/spaces/abc/Scans/Rechnungen%202026/</D:href>
+                <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>
+              <D:response><D:href>https://cloud.example.com/remote.php/dav/spaces/abc/Scans/brief.pdf</D:href>
+                <D:propstat><D:prop><D:resourcetype/></D:prop></D:propstat></D:response>
+            </D:multistatus>"""
+        assertEquals(listOf("Rechnungen 2026"), OpenCloudClient.parseFolders(xml))
     }
 
     @Test fun addressAndNameHelpers() {
@@ -150,6 +191,8 @@ class OpenCloudClientTest {
         assertEquals("http://192.168.1.5:9200/", OpenCloudClient.parseServerUrl("http://192.168.1.5:9200").toString())
         assertEquals(null, OpenCloudClient.parseServerUrl("  "))
         assertEquals(listOf("a", "b c"), OpenCloudClient.splitFolder("/a//b c/../"))
+        assertEquals("a/b c", OpenCloudClient.normalizeFolder(" /a//b c/ "))
+        assertEquals("", OpenCloudClient.normalizeFolder("/"))
         assertEquals("Rechnung-2026.pdf", OpenCloudClient.pdfFileName(" Rechnung/2026.PDF ", "Scan"))
         assertEquals("Scan.pdf", OpenCloudClient.pdfFileName(" . ", "Scan"))
     }

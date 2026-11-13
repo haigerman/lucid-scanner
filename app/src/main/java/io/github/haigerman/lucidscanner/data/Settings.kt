@@ -8,6 +8,7 @@ import android.util.Base64
 import io.github.haigerman.lucidscanner.cloud.OpenCloudClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -18,21 +19,22 @@ data class Config(
     val serverUrl: String = "",
     val user: String = "",
     val token: String = "",
-    val folder: String = "Scans",
+    /** Ordner-Favoriten: Pfade im persönlichen Bereich, z. B. „Dokumente/Scans“. */
+    val favorites: List<String> = listOf("Scans"),
     val enhance: Boolean = true,
 ) {
     /** Alles da, um in OpenCloud abzulegen? */
     val complete: Boolean
         get() = OpenCloudClient.parseServerUrl(serverUrl) != null && user.isNotBlank() && token.isNotBlank()
 
-    /** Kurzbeschreibung des Ablageorts, z. B. „cloud.example.com › Scans“. */
-    val destination: String
-        get() {
-            val host = OpenCloudClient.parseServerUrl(serverUrl)?.host ?: return ""
-            val path = OpenCloudClient.splitFolder(folder).joinToString(" › ")
-            return if (path.isEmpty()) host else "$host › $path"
-        }
+    /** Rechnername der OpenCloud, z. B. „cloud.example.com“. */
+    val host: String
+        get() = OpenCloudClient.parseServerUrl(serverUrl)?.host.orEmpty()
 }
+
+/** Ordnerpfad zum Anzeigen: „Dokumente › Scans“; die oberste Ebene heißt „Persönlicher Bereich“. */
+fun folderLabel(folder: String): String =
+    OpenCloudClient.splitFolder(folder).joinToString(" › ").ifEmpty { "Persönlicher Bereich" }
 
 /** Einstellungen der App. Der App-Token wird mit einem Schlüssel aus dem Android-Keystore verschlüsselt abgelegt. */
 object Settings {
@@ -47,9 +49,21 @@ object Settings {
             serverUrl = prefs.getString("serverUrl", "") ?: "",
             user = prefs.getString("user", "") ?: "",
             token = prefs.getString("token", null)?.let(Secrets::decrypt) ?: "",
-            folder = prefs.getString("folder", "Scans") ?: "Scans",
+            favorites = loadFavorites(),
             enhance = prefs.getBoolean("enhance", true),
         )
+    }
+
+    private fun loadFavorites(): List<String> {
+        val stored = prefs.getString("favorites", null)
+            // frühere Fassung: genau ein fester Ordner
+            ?: return listOf(OpenCloudClient.normalizeFolder(prefs.getString("folder", "Scans") ?: "Scans"))
+        return try {
+            val arr = JSONArray(stored)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun update(config: Config) {
@@ -59,7 +73,7 @@ object Settings {
         prefs.edit().apply {
             putString("serverUrl", config.serverUrl)
             putString("user", config.user)
-            putString("folder", config.folder)
+            putString("favorites", JSONArray(config.favorites).toString())
             putBoolean("enhance", config.enhance)
             if (config.token != old.token) {
                 if (config.token.isEmpty()) remove("token") else putString("token", Secrets.encrypt(config.token))

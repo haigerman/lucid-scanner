@@ -7,13 +7,18 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import org.json.JSONObject
+import org.w3c.dom.Element
+import org.xml.sax.InputSource
 import java.io.File
 import java.io.IOException
+import java.io.StringReader
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
+import javax.xml.parsers.DocumentBuilderFactory
 
 class OpenCloudException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -37,24 +42,30 @@ class OpenCloudClient(
     private var davRoot: HttpUrl? = null
 
     /** Prüft Adresse und Anmeldung. Liefert eine kurze Erfolgsmeldung. */
-    fun testConnection(folder: String): String {
+    fun testConnection(): String {
         val root = resolveDavRoot()
         execute(Request.Builder().url(root).method("PROPFIND", null).header("Depth", "0")).use { r ->
             when (r.code) {
-                207, 200 -> Unit
+                207, 200 -> return "Verbindung steht."
                 else -> throw failure(r.code, "Verbindung")
             }
         }
+    }
+
+    /** Namen der Unterordner von [folder], alphabetisch. */
+    fun listFolders(folder: String): List<String> {
         val segments = splitFolder(folder)
-        if (segments.isEmpty()) return "Verbindung steht."
-        execute(Request.Builder().url(child(root, segments)).method("PROPFIND", null).header("Depth", "0")).use { r ->
-            return when (r.code) {
-                207, 200 -> "Verbindung steht, Ordner gefunden."
-                404 -> "Verbindung steht. Der Ordner wird beim ersten Scan angelegt."
-                else -> throw failure(r.code, "Ordner prüfen")
-            }
+        val url = child(resolveDavRoot(), segments)
+        val body = PROPFIND_FOLDERS.toRequestBody("application/xml; charset=utf-8".toMediaType())
+        execute(Request.Builder().url(url).method("PROPFIND", body).header("Depth", "1")).use { r ->
+            if (r.code == 404 && segments.isNotEmpty()) throw OpenCloudException("Diesen Ordner gibt es in OpenCloud nicht.")
+            if (r.code != 207) throw failure(r.code, "Ordner lesen")
+            return parseFolders(r.body?.string().orEmpty())
         }
     }
+
+    /** Legt [folder] an (samt fehlender Ordner darüber). Gibt es ihn schon, passiert nichts. */
+    fun createFolder(folder: String) = createFolders(resolveDavRoot(), splitFolder(folder))
 
     /**
      * Lädt [file] als [fileName] in [folder] hoch; fehlende Ordner werden angelegt.
@@ -181,6 +192,56 @@ class OpenCloudClient(
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .build()
         }
+
+        private const val PROPFIND_FOLDERS =
+            """<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>"""
+
+        /**
+         * Liest aus einer WebDAV-Antwort (PROPFIND, Depth 1) die Namen der Unterordner.
+         * Der abgefragte Ordner selbst steht mit in der Antwort – er hat den kürzesten Pfad.
+         */
+        fun parseFolders(xml: String): List<String> {
+            val doc = try {
+                DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+                    .newDocumentBuilder().parse(InputSource(StringReader(xml)))
+            } catch (e: Exception) {
+                throw OpenCloudException("Die Antwort der OpenCloud ließ sich nicht lesen.", e)
+            }
+            val responses = doc.getElementsByTagNameNS("DAV:", "response")
+            val folders = ArrayList<List<String>>()
+            for (i in 0 until responses.length) {
+                val response = responses.item(i) as? Element ?: continue
+                if (response.getElementsByTagNameNS("DAV:", "collection").length == 0) continue
+                val href = response.getElementsByTagNameNS("DAV:", "href").item(0)?.textContent?.trim() ?: continue
+                val path = if (href.contains("://")) href.substringAfter("://").substringAfter('/', "") else href
+                folders += path.substringBefore('?').split('/').filter { it.isNotEmpty() }.map(::percentDecode)
+            }
+            val depth = folders.minOfOrNull { it.size } ?: return emptyList()
+            // nach deutscher Schreibweise sortieren: „Ärzte“ gehört zu A, nicht hinter Z
+            val collator = java.text.Collator.getInstance(java.util.Locale.GERMAN)
+            return folders.filter { it.size == depth + 1 }.map { it.last() }.sortedWith(collator::compare)
+        }
+
+        private fun percentDecode(s: String): String {
+            if (!s.contains('%')) return s
+            val out = java.io.ByteArrayOutputStream()
+            var i = 0
+            while (i < s.length) {
+                val c = s[i]
+                val hex = if (c == '%' && i + 2 < s.length) s.substring(i + 1, i + 3).toIntOrNull(16) else null
+                if (hex != null) {
+                    out.write(hex)
+                    i += 3
+                } else {
+                    out.write(c.toString().toByteArray(Charsets.UTF_8))
+                    i++
+                }
+            }
+            return String(out.toByteArray(), Charsets.UTF_8)
+        }
+
+        /** Einheitliche Schreibweise eines Ordnerpfads: `Dokumente/Scans`, leer für die oberste Ebene. */
+        fun normalizeFolder(folder: String): String = splitFolder(folder).joinToString("/")
 
         /** Ergänzt `https://`, wenn kein Schema angegeben ist, und entfernt Schrägstriche am Ende. */
         fun parseServerUrl(input: String): HttpUrl? {
