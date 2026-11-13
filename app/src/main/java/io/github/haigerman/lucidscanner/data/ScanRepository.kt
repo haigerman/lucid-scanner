@@ -44,6 +44,10 @@ object ScanRepository {
     private val worker = Executors.newSingleThreadExecutor()
     private var nextId = 1L
 
+    /** Art des laufenden Scans: Farbe oder Schwarz-Weiß. */
+    @Volatile var color = true
+        private set
+
     /** Zählt hoch, wenn ein Scan verworfen wird – Aufnahmen aus einem alten Scan werden dann ignoriert. */
     @Volatile private var generation = 0
 
@@ -65,26 +69,31 @@ object ScanRepository {
     }
 
     /** Beginnt einen neuen, leeren Scan. */
-    fun start() {
+    fun start(color: Boolean = this.color) {
+        this.color = color
         generation++
         clearFiles()
         _state.value = ScanState()
         _pdf.value = null
     }
 
-    fun discard() = start()
+    fun discard() = start(color)
 
-    /** Nimmt ein Kamerafoto an und bereitet es im Hintergrund zur Seite auf. */
-    fun addCapture(jpeg: ByteArray, rotation: Int, crop: Rect?, hint: Quad?) {
+    /**
+     * Nimmt ein Kamerafoto an und bereitet es im Hintergrund zur Seite auf.
+     * [fixed] ist ein von Hand festgelegter Zuschnitt; ohne ihn wird das Blatt gesucht.
+     */
+    fun addCapture(jpeg: ByteArray, rotation: Int, crop: Rect?, hint: Quad?, fixed: Quad? = null) {
         val gen = generation
         val id = nextId++
         val enhance = Settings.config.value.enhance
+        val color = color
         _state.update { it.copy(processing = it.processing + 1) }
         worker.execute {
             val file = File(dir, "page-$id.jpg")
             val ok = try {
                 dir.mkdirs()
-                PageProcessor.process(jpeg, rotation, crop, hint, enhance, file)
+                PageProcessor.process(jpeg, rotation, crop, hint, fixed, color, enhance, file)
                 true
             } catch (_: Throwable) { // auch OutOfMemoryError bei sehr großen Fotos
                 file.delete()

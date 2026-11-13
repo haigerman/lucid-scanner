@@ -91,4 +91,31 @@ class CaptureTriggerTest {
         t.reset()
         assertTrue(t.run(700, 4000, quad, sig(0f)) > 0)
     }
+
+    @Test fun afterManualShotTheSamePageIsNotCapturedAgain() {
+        // von Hand ausgelöst, ohne dass das Blatt erkannt war; kurz darauf wird es doch erkannt
+        val t = CaptureTrigger(holdMs = 600)
+        assertTrue(t.beginManual())
+        t.onCaptured(null, adoptNext = true)
+        assertEquals(-1, t.run(0, 300, null, null))
+        assertEquals(-1, t.run(350, 5000, quad, sig(0f)))
+        // erst das nächste Blatt wird wieder automatisch erfasst
+        assertTrue(t.run(5050, 9000, quad, sig(0.1f)) > 0)
+    }
+
+    @Test fun afterManualShotOfUndetectedPageLaterPagesAreCaptured() {
+        // das Blatt wird auch nach der Aufnahme nicht erkannt; ein später aufgelegtes, erkanntes Blatt schon
+        val t = CaptureTrigger(holdMs = 600)
+        assertTrue(t.beginManual())
+        t.onCaptured(null, adoptNext = true)
+        assertEquals(-1, t.run(0, 3000, null, null))
+        assertEquals(3050 + 600, t.run(3050, 6000, quad, sig(0f)))
+    }
+
+    @Test fun noAutomaticShotWhileManualShotIsBeingCropped() {
+        val t = CaptureTrigger(holdMs = 600)
+        assertTrue(t.beginManual())
+        assertEquals(-1, t.run(0, 5000, quad, sig(0f)))
+        assertFalse(t.beginManual())
+    }
 }

@@ -30,27 +30,44 @@ object PageProcessor {
      * @param hint     Blattecken aus der Vorschau, bezogen auf den aufrechten Ausschnitt; wird benutzt,
      *                 wenn sich das Blatt im Foto selbst nicht finden lässt. Ohne beides wird das
      *                 ganze Foto zur Seite.
+     * @param fixed    vom Nutzer festgelegter Zuschnitt – dann wird nicht nach dem Blatt gesucht
+     * @param color    false: Schwarz-Weiß-Seite (Graustufen, kräftiger Kontrast, immer aufgehellt)
+     * @param enhance  Farbseiten aufhellen (Schatten ausgleichen, Papier weiß)
      */
-    fun process(jpeg: ByteArray, rotation: Int, crop: Rect?, hint: Quad?, enhance: Boolean, out: File) {
-        val upright = decodeUpright(jpeg, rotation, crop)
-        val quad = findSheet(upright) ?: hint ?: Quad.FULL
+    fun process(
+        jpeg: ByteArray, rotation: Int, crop: Rect?, hint: Quad?, fixed: Quad?,
+        color: Boolean, enhance: Boolean, out: File,
+    ) {
+        val upright = decodeUpright(jpeg, rotation, crop, 4400)
+        val quad = fixed ?: findSheet(upright) ?: hint ?: Quad.FULL
         val page = warp(upright, quad)
         if (page !== upright) upright.recycle()
-        if (enhance) {
+        if (enhance || !color) {
             val px = IntArray(page.width * page.height)
             page.getPixels(px, 0, page.width, 0, 0, page.width, page.height)
-            PageEnhancer.enhance(px, page.width, page.height)
+            if (color) {
+                PageEnhancer.enhance(px, page.width, page.height)
+            } else {
+                PageEnhancer.toGray(px)
+                PageEnhancer.enhance(px, page.width, page.height, PageEnhancer.CONTRAST_BW)
+            }
             page.setPixels(px, 0, page.width, 0, 0, page.width, page.height)
         }
         out.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
         page.recycle()
     }
 
-    private fun decodeUpright(jpeg: ByteArray, rotation: Int, crop: Rect?): Bitmap {
+    /** Verkleinertes, aufrechtes Foto für den Zuschnitt von Hand, samt dem darin gefundenen Blatt (falls eins da ist). */
+    fun preview(jpeg: ByteArray, rotation: Int, crop: Rect?): Pair<Bitmap, Quad?> {
+        val upright = decodeUpright(jpeg, rotation, crop, 2000)
+        return upright to findSheet(upright)
+    }
+
+    private fun decodeUpright(jpeg: ByteArray, rotation: Int, crop: Rect?, maxSide: Int): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
         var sample = 1
-        while (max(bounds.outWidth, bounds.outHeight) / sample > 4400) sample *= 2
+        while (max(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
         val raw = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, BitmapFactory.Options().apply { inSampleSize = sample })
             ?: throw IOException("Foto lässt sich nicht lesen")
         val area = Rect(0, 0, raw.width, raw.height)

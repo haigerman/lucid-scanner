@@ -49,7 +49,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(notice: String?, onNewScan: (color: Boolean) -> Unit, onSettings: () -> Unit) {
     val config by Settings.config.collectAsStateWithLifecycle()
     val history by ScanRepository.history.collectAsStateWithLifecycle()
 
@@ -105,7 +105,7 @@ fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
                 } else {
                     item {
                         Text(
-                            "Auf den Knopf tippen, das Blatt ins Bild legen und still halten – die Aufnahme " +
+                            "SW-Scan oder Farbscan antippen, das Blatt ins Bild legen und still halten – die Aufnahme " +
                                 "löst von selbst aus. Dann das nächste Blatt auflegen.",
                             fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp),
@@ -122,9 +122,11 @@ fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
                     .padding(vertical = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ScanButton(onNewScan)
+                Row(horizontalArrangement = Arrangement.spacedBy(44.dp)) {
+                    ScanButton("SW-Scan", color = false) { onNewScan(false) }
+                    ScanButton("Farbscan", color = true) { onNewScan(true) }
+                }
                 Spacer(Modifier.height(10.dp))
-                Text("Neuer Scan", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     if (config.complete) "Ablage: ${config.host}" else "OpenCloud ist noch nicht eingerichtet",
                     fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -136,25 +138,39 @@ fun HomeScreen(notice: String?, onNewScan: () -> Unit, onSettings: () -> Unit) {
     }
 }
 
-/** Großer runder Knopf: ein Blatt mit Scan-Linie. */
+/**
+ * Großer runder Knopf für einen neuen Scan: ein Blatt mit Scan-Linie.
+ * Der Farbscan-Knopf trägt bunte Zeilen auf dem Blatt, der Schwarz-Weiß-Knopf ist hell mit grauen.
+ */
 @Composable
-private fun ScanButton(onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(84.dp)
-            .clip(CircleShape)
-            .background(Sand)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "Neuer Scan" },
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(Modifier.size(40.dp)) {
-            val w = size.width
-            val h = size.height
-            val stroke = Stroke(w * 0.07f, cap = StrokeCap.Round)
-            drawRoundRect(OnSand, Offset(w * 0.2f, h * 0.06f), androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.88f), androidx.compose.ui.geometry.CornerRadius(w * 0.06f), style = stroke)
-            drawLine(OnSand, Offset(w * 0.04f, h * 0.5f), Offset(w * 0.96f, h * 0.5f), w * 0.09f, StrokeCap.Round)
+private fun ScanButton(label: String, color: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(if (color) Sand else Color(0xFFEAF1F1))
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = "Neuer $label" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(40.dp)) {
+                val w = size.width
+                val h = size.height
+                val ink = if (color) OnSand else Color(0xFF1B2327)
+                val lines = if (color) listOf(Color(0xFFC2452D), Color(0xFF1F7A74), Color(0xFF3B5BA9)) else listOf(Color(0xFF7A858A), Color(0xFF7A858A), Color(0xFF7A858A))
+                drawRoundRect(
+                    ink, Offset(w * 0.2f, h * 0.06f), androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.88f),
+                    androidx.compose.ui.geometry.CornerRadius(w * 0.06f), style = Stroke(w * 0.07f, cap = StrokeCap.Round),
+                )
+                val ys = listOf(0.26f, 0.72f, 0.84f)
+                val ends = listOf(0.62f, 0.68f, 0.54f)
+                for (i in 0..2) drawLine(lines[i], Offset(w * 0.33f, h * ys[i]), Offset(w * ends[i], h * ys[i]), w * 0.06f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.04f, h * 0.5f), Offset(w * 0.96f, h * 0.5f), w * 0.09f, StrokeCap.Round)
+            }
         }
+        Spacer(Modifier.height(8.dp))
+        Text(label, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

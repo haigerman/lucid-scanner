@@ -31,6 +31,7 @@ class CaptureTrigger(
     private val moveTolerance: Float = 0.02f,
     private val lostMs: Long = 250,
     private val changeTolerance: Float = 4.5f,
+    private val adoptMs: Long = 1500,
 ) {
     private var anchor: Quad? = null
     private var stableSince = 0L
@@ -41,17 +42,33 @@ class CaptureTrigger(
     private var lostSince = -1L
     private var changeFrames = 0
 
+    // Nach einer Aufnahme ohne Fingerabdruck: das nächste erkannte Blatt gilt als die erfasste Seite
+    private var adopt = false
+    private var adoptUntil = -1L
+
     fun onFrame(sighting: Sighting, quad: Quad?, signature: FloatArray?, nowMs: Long): TriggerState {
         if (busy) return TriggerState(Phase.CAPTURING, 1f, false)
+
+        if (adopt) {
+            if (adoptUntil < 0) adoptUntil = nowMs + adoptMs
+            if (nowMs > adoptUntil) {
+                adopt = false
+                changed = true
+            }
+        }
 
         if (sighting != Sighting.FOUND || quad == null || signature == null) {
             anchor = null
             if (lostSince < 0) lostSince = nowMs
-            if (nowMs - lostSince >= lostMs) changed = true
+            if (nowMs - lostSince >= lostMs && !adopt) changed = true
             return TriggerState(if (sighting == Sighting.PARTIAL) Phase.PARTIAL else Phase.SEARCHING, 0f, false)
         }
         lostSince = -1
 
+        if (adopt) {
+            adopt = false
+            lastSignature = signature
+        }
         val last = lastSignature
         if (!changed && last != null) {
             // zwei Bilder in Folge, damit einzelnes Rauschen nicht reicht
@@ -84,12 +101,20 @@ class CaptureTrigger(
         return true
     }
 
-    /** Die Aufnahme ist im Kasten; [signature] ist der Fingerabdruck der erfassten Seite (falls erkannt). */
-    fun onCaptured(signature: FloatArray?) {
+    /**
+     * Die Aufnahme ist im Kasten; [signature] ist der Fingerabdruck der erfassten Seite.
+     *
+     * Ohne Fingerabdruck (Aufnahme von Hand, Blatt war nicht erkannt) gilt mit [adoptNext] das Blatt,
+     * das gleich danach im Bild auftaucht, als die eben erfasste Seite – sie wird dann nicht noch
+     * einmal automatisch aufgenommen.
+     */
+    fun onCaptured(signature: FloatArray?, adoptNext: Boolean = false) {
         busy = false
         anchor = null
         lastSignature = signature
-        changed = signature == null
+        adopt = signature == null && adoptNext
+        adoptUntil = -1
+        changed = signature == null && !adopt
         changeFrames = 0
         lostSince = -1
     }
@@ -103,6 +128,7 @@ class CaptureTrigger(
     fun reset() {
         lastSignature = null
         changed = true
+        adopt = false
         anchor = null
         changeFrames = 0
     }

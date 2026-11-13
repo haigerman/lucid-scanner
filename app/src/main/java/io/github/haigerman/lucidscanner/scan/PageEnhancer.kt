@@ -10,8 +10,19 @@ import kotlin.math.pow
  */
 object PageEnhancer {
 
-    /** Bearbeitet [pixels] (ARGB) an Ort und Stelle. */
-    fun enhance(pixels: IntArray, w: Int, h: Int) {
+    /** Kontrast für Schwarz-Weiß-Seiten: Schrift wird satt schwarz. */
+    const val CONTRAST_BW = 1.7
+
+    /** Wandelt [pixels] (ARGB) an Ort und Stelle in Graustufen. */
+    fun toGray(pixels: IntArray) {
+        for (i in pixels.indices) {
+            val v = luma(pixels[i])
+            pixels[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        }
+    }
+
+    /** Bearbeitet [pixels] (ARGB) an Ort und Stelle; [contrast] > 1 macht dunkle Töne dunkler. */
+    fun enhance(pixels: IntArray, w: Int, h: Int, contrast: Double = 1.25) {
         if (w < 8 || h < 8) return
         val cell = max(8, max(w, h) / 72)
         val gw = (w + cell - 1) / cell
@@ -53,7 +64,7 @@ object PageEnhancer {
         // --- Kennlinie: Weißpunkt knapp unter Papierhelligkeit, etwas steilerer Kontrast
         val curve = IntArray(256) { v ->
             val x = min(1.0, v / (255.0 * 0.92))
-            (255.0 * x.pow(1.25)).toInt().coerceIn(0, 255)
+            (255.0 * x.pow(contrast)).toInt().coerceIn(0, 255)
         }
 
         for (y in 0 until h) {

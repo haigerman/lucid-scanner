@@ -43,9 +43,9 @@ class MainActivity : ComponentActivity() {
                 when (screen) {
                     Screen.HOME -> HomeScreen(
                         notice = notice,
-                        onNewScan = {
+                        onNewScan = { color ->
                             notice = null
-                            ScanRepository.start()
+                            ScanRepository.start(color)
                             screen = Screen.CAMERA
                         },
                         onSettings = { openSettings(Screen.HOME) },

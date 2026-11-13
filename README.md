@@ -5,7 +5,7 @@ es direkt in deiner **OpenCloud** ablegt – in einem deiner Favoriten-Ordner od
 
 ## So geht ein Scan
 
-1. **Neuer Scan** antippen – die Kamera öffnet sich.
+1. **SW-Scan** oder **Farbscan** antippen – die Kamera öffnet sich.
 2. Blatt ins Bild legen. Die App erkennt das helle Blatt, zeichnet seinen Umriss und löst
    von selbst aus, sobald Handy und Blatt kurz still sind (der Ring um den Auslöser füllt sich).
 3. Blatt wechseln. Sobald das nächste Blatt ruhig im Bild liegt, wird Seite 2 erfasst – und so weiter.
@@ -20,12 +20,17 @@ Gut zu wissen:
 
 - Dieselbe Seite wird nicht doppelt erfasst: Nach einer Aufnahme wartet die App, bis das Blatt
   kurz aus dem Bild war oder sich sein Inhalt sichtbar geändert hat.
+- **SW-Scan** macht Graustufen-Seiten mit kräftigem Kontrast (weißes Papier, satt schwarze
+  Schrift) – ideal für Briefe und Formulare. **Farbscan** behält die Farben.
 - Der Auslöser lässt sich auch **von Hand** antippen – etwa wenn das Blatt nicht erkannt wird
-  (weißes Papier auf weißem Tisch). Ohne erkanntes Blatt wird das ganze Bild zur Seite.
+  (weißes Papier auf weißem Tisch). Danach kommt der **Zuschnitt**: Das Foto wird gezeigt, die
+  vier Ecken lassen sich auf die Ecken des Blatts ziehen (vorbelegt mit dem erkannten Blatt,
+  sonst mit einem Rahmen). **Übernehmen** macht daraus die Seite, und es geht direkt mit der
+  nächsten Seite weiter; **Verwerfen** wirft das Foto weg.
 - **↶** neben dem Vorschaubild nimmt die letzte Seite wieder heraus, **🔦** schaltet das Licht ein.
 - Jede Seite wird entzerrt (auch schräg fotografiert kommt ein A4-Blatt als A4-Seite heraus) und
-  aufgehellt: Schatten werden ausgeglichen, das Papier wird weiß. Das Aufhellen lässt sich in den
-  Einstellungen abschalten, z. B. für Fotos.
+  aufgehellt: Schatten werden ausgeglichen, das Papier wird weiß. Für Farbscans lässt sich das
+  Aufhellen in den Einstellungen abschalten, z. B. für Fotos.
 - Am besten liegt das Blatt auf einem **dunkleren Untergrund** und ist ganz im Bild.
 
 ## Einrichtung (einmalig)
@@ -62,8 +67,9 @@ der Scan bleibt in der Kontrollansicht.
 | Datei | Aufgabe |
 |---|---|
 | `MainActivity.kt` | Startet die Oberfläche, wechselt zwischen den vier Bildschirmen |
-| `ui/HomeScreen.kt` | Startbildschirm: „Neuer Scan“, zuletzt abgelegte Scans |
+| `ui/HomeScreen.kt` | Startbildschirm: „SW-Scan“ und „Farbscan“, zuletzt abgelegte Scans |
 | `ui/CameraScreen.kt` | Kamera mit Blattumriss, Auslöser, „Fertig“ |
+| `ui/CropEditor.kt` | Zuschnitt von Hand nach einer selbst ausgelösten Aufnahme |
 | `ui/ReviewScreen.kt`, `ui/PdfPreview.kt` | Kontrollansicht: zeichnet die Seiten aus der fertigen PDF-Datei |
 | `ui/SettingsScreen.kt` | OpenCloud-Zugang, Ordner-Favoriten, Aufhellen |
 | `ui/FolderBrowser.kt` | Ordnerbrowser: blättern, neuen Ordner anlegen, auswählen |
@@ -71,7 +77,7 @@ der Scan bleibt in der Kontrollansicht.
 | `scan/DocumentDetector.kt` | Findet das Blatt: Schwelle nach Otsu → größte helle Fläche → Viereck mit angepassten Kanten |
 | `scan/CaptureTrigger.kt` | Entscheidet, wann ausgelöst wird (Haltezeit, keine Doppelaufnahmen) |
 | `scan/PageProcessor.kt`, `scan/Perspective.kt` | Foto → Seite: Blatt im Foto finden, entzerren, wahres Seitenverhältnis berechnen |
-| `scan/PageEnhancer.kt` | Schattenausgleich und Weißabgleich des Papiers |
+| `scan/PageEnhancer.kt` | Schattenausgleich und Weißabgleich des Papiers, Graustufen für SW-Scans |
 | `pdf/PdfWriter.kt` | Schreibt das PDF; die JPEG-Seiten werden unverändert eingebettet |
 | `cloud/OpenCloudClient.kt` | WebDAV: persönlichen Bereich finden, Ordner auflisten und anlegen, hochladen |
 | `data/Settings.kt`, `data/ScanRepository.kt` | Einstellungen und der laufende Scan |

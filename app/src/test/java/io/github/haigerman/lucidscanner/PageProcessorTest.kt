@@ -28,7 +28,7 @@ class PageProcessorTest {
 
     @Test fun photoBecomesCleanUprightPage() {
         val out = tmp.newFile("page.jpg")
-        PageProcessor.process(photo(), 90, null, null, true, out)
+        PageProcessor.process(photo(), 90, null, null, null, true, true, out)
         val page = BitmapFactory.decodeFile(out.path)
         File("build/test-output").mkdirs()
         out.copyTo(File("build/test-output/page.jpg"), overwrite = true)
@@ -52,11 +52,45 @@ class PageProcessorTest {
 
     @Test fun withoutEnhancementColoursStayAsPhotographed() {
         val out = tmp.newFile("plain.jpg")
-        PageProcessor.process(photo(), 90, null, null, false, out)
+        PageProcessor.process(photo(), 90, null, null, null, true, false, out)
         val page = BitmapFactory.decodeFile(out.path)
         val c = page.getPixel(page.width / 2, (page.height * 0.03f).toInt())
         val v = (Color.red(c) + Color.green(c) + Color.blue(c)) / 3
         assertTrue("Papier unverändert erwartet: $v", v in 120..240)
+    }
+
+    @Test fun blackAndWhiteScanHasNoColourAndStrongContrast() {
+        val out = tmp.newFile("bw.jpg")
+        // „Aufhellen“ ist aus – SW-Seiten werden trotzdem aufgehellt
+        PageProcessor.process(photo(), 90, null, null, null, false, false, out)
+        val page = BitmapFactory.decodeFile(out.path)
+        out.copyTo(File("build/test-output/page-bw.jpg"), overwrite = true)
+        fun at(u: Float, v: Float) = page.getPixel((u * page.width).toInt(), (v * page.height).toInt())
+        // das rote Feld ist grau geworden, Papier weiß, Überschrift schwarz
+        val red = at(0.77f, 0.877f)
+        assertTrue(kotlin.math.abs(Color.red(red) - Color.green(red)) < 12 && kotlin.math.abs(Color.red(red) - Color.blue(red)) < 12)
+        assertTrue(Color.red(at(0.5f, 0.03f)) > 240)
+        assertTrue(Color.red(at(0.30f, 0.085f)) < 40)
+    }
+
+    @Test fun manualCropIsUsedInsteadOfDetection() {
+        val out = tmp.newFile("crop.jpg")
+        // Zuschnitt von Hand: nur die Überschrift oben links (als breiter Streifen)
+        val quad = io.github.haigerman.lucidscanner.scan.Quad(
+            io.github.haigerman.lucidscanner.scan.Pt(0.30f, 0.26f), io.github.haigerman.lucidscanner.scan.Pt(0.62f, 0.24f),
+            io.github.haigerman.lucidscanner.scan.Pt(0.62f, 0.31f), io.github.haigerman.lucidscanner.scan.Pt(0.30f, 0.33f),
+        )
+        PageProcessor.process(photo(), 90, null, null, quad, true, false, out)
+        val page = BitmapFactory.decodeFile(out.path)
+        assertTrue("Querformat erwartet: ${page.width} x ${page.height}", page.width > 2 * page.height)
+    }
+
+    @Test fun previewForManualCropFindsTheSheet() {
+        val (bitmap, quad) = PageProcessor.preview(photo(), 90, null)
+        assertTrue(bitmap.height > bitmap.width) // aufrecht
+        // Ecken des Blatts im Testfoto (siehe Erzeugung): oben links bei etwa (0,27 | 0,27)
+        assertEquals(0.27f, quad!!.tl.x, 0.02f)
+        assertEquals(0.27f, quad.tl.y, 0.02f)
     }
 
     @Test fun dinRatioIsSnapped() {

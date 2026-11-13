@@ -177,9 +177,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Surface(color = Card, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text("Seiten aufhellen", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Farbscans aufhellen", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
                             Text(
-                                "Gleicht Schatten aus und macht das Papier weiß. Für Fotos und farbige Vorlagen besser ausschalten.",
+                                "Gleicht Schatten aus und macht das Papier weiß. Für Fotos und farbige Vorlagen besser ausschalten. SW-Scans werden immer aufgehellt.",
                                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

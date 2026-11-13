@@ -144,6 +144,7 @@ private fun Scanner(onFinished: () -> Unit, onCancel: () -> Unit) {
     val camera = remember { ScanCamera(context.applicationContext) }
     val ui by camera.ui.collectAsStateWithLifecycle()
     val scan by ScanRepository.state.collectAsStateWithLifecycle()
+    val manual by camera.manual.collectAsStateWithLifecycle()
     val previewView = remember {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -183,6 +184,8 @@ private fun Scanner(onFinished: () -> Unit, onCancel: () -> Unit) {
     }
     BackHandler { if (!building) cancel() }
 
+    // Die Kamera läuft unter dem Zuschnitt weiter, damit es danach ohne Wartezeit weitergeht
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         // ---------------------------------------------------------------- Kopfzeile
         Row(
@@ -190,11 +193,16 @@ private fun Scanner(onFinished: () -> Unit, onCancel: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SymbolButton("✕", "Scan abbrechen", enabled = !building) { cancel() }
-            Text(
-                statusText(ui, total), fontSize = 15.sp, textAlign = TextAlign.Center,
-                color = if (ui.phase == Phase.HOLD || ui.phase == Phase.CAPTURING) Sand else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    statusText(ui, total), fontSize = 15.sp, textAlign = TextAlign.Center,
+                    color = if (ui.phase == Phase.HOLD || ui.phase == Phase.CAPTURING) Sand else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    if (ScanRepository.color) "Farbscan" else "SW-Scan", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (ui.torchAvailable) {
                 SymbolButton("🔦", if (ui.torchOn) "Licht aus" else "Licht an", color = Color.White.copy(alpha = if (ui.torchOn) 1f else 0.45f)) { camera.toggleTorch() }
             } else {
@@ -251,6 +259,13 @@ private fun Scanner(onFinished: () -> Unit, onCancel: () -> Unit) {
         }
     }
 
+        manual?.let { shot ->
+            Box(Modifier.fillMaxSize().background(Night)) {
+                CropEditor(shot, onAccept = { camera.finishManual(it) }, onDiscard = { camera.finishManual(null) })
+            }
+        }
+    }
+
     if (confirmCancel) {
         AlertDialog(
             onDismissRequest = { confirmCancel = false },
@@ -293,7 +308,7 @@ private fun SheetOverlay(ui: CameraUi, modifier: Modifier = Modifier) {
     }
 }
 
-/** Auslöser: füllt sich, während das Blatt still liegt; Antippen löst von Hand aus. */
+/** Auslöser: füllt sich, während das Blatt still liegt; Antippen löst von Hand aus und führt zum Zuschnitt. */
 @Composable
 private fun Shutter(ui: CameraUi, enabled: Boolean, onClick: () -> Unit) {
     Box(

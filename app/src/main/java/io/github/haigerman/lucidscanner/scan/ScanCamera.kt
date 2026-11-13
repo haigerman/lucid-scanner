@@ -1,6 +1,7 @@
 package io.github.haigerman.lucidscanner.scan
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Rational
@@ -41,6 +42,18 @@ data class CameraUi(
     val error: String? = null,
 )
 
+/** Ein von Hand ausgelöstes Foto, das auf den Zuschnitt durch den Nutzer wartet. */
+class ManualShot(
+    val jpeg: ByteArray,
+    val rotation: Int,
+    val crop: Rect,
+    /** Verkleinertes, aufrechtes Foto zum Anzeigen. */
+    val preview: Bitmap,
+    /** Vorschlag für den Zuschnitt: das erkannte Blatt oder ein Rahmen mit etwas Rand. */
+    val suggestion: Quad,
+    val signature: FloatArray?,
+)
+
 /**
  * Die Kamera des Scanners: Vorschau, laufende Blatterkennung und automatische Aufnahme.
  *
@@ -50,6 +63,11 @@ data class CameraUi(
 class ScanCamera(private val context: Context) {
     private val _ui = MutableStateFlow(CameraUi())
     val ui: StateFlow<CameraUi> = _ui
+
+    private val _manual = MutableStateFlow<ManualShot?>(null)
+
+    /** Gesetzt, solange ein von Hand ausgelöstes Foto zugeschnitten wird. */
+    val manual: StateFlow<ManualShot?> = _manual
 
     /** Analyse und Auslöse-Logik laufen ausschließlich auf diesem einen Thread. */
     private val executor = Executors.newSingleThreadExecutor()
@@ -113,10 +131,23 @@ class ScanCamera(private val context: Context) {
         _ui.update { it.copy(torchOn = on) }
     }
 
-    /** Aufnahme von Hand – auch wenn kein Blatt erkannt wurde (dann wird das ganze Bild zur Seite). */
+    /** Aufnahme von Hand: Das Foto geht nicht gleich in den Scan, sondern erst in den Zuschnitt ([manual]). */
     fun shootManually() {
         executor.execute {
-            if (trigger.beginManual()) takePicture(lastQuad, lastSignature)
+            if (trigger.beginManual()) takePicture(lastQuad, lastSignature, manual = true)
+        }
+    }
+
+    /** Schließt den Zuschnitt ab: mit [quad] wird die Seite übernommen, mit null verworfen. */
+    fun finishManual(quad: Quad?) {
+        val shot = _manual.value ?: return
+        _manual.value = null
+        if (quad != null) {
+            ScanRepository.addCapture(shot.jpeg, shot.rotation, shot.crop, null, fixed = quad)
+            _ui.update { it.copy(shots = it.shots + 1) }
+        }
+        executor.execute {
+            if (quad != null) trigger.onCaptured(shot.signature, adoptNext = true) else trigger.onCaptureFailed()
         }
     }
 
@@ -162,7 +193,7 @@ class ScanCamera(private val context: Context) {
         }
     }
 
-    private fun takePicture(hint: Quad?, signature: FloatArray?) {
+    private fun takePicture(hint: Quad?, signature: FloatArray?, manual: Boolean = false) {
         val capture = imageCapture
         if (capture == null) {
             trigger.onCaptureFailed()
@@ -182,6 +213,16 @@ class ScanCamera(private val context: Context) {
                 } finally {
                     image.close()
                 }
+                if (manual) {
+                    // Die Auslöse-Logik bleibt gesperrt, bis der Zuschnitt abgeschlossen ist (finishManual)
+                    try {
+                        val (preview, found) = PageProcessor.preview(jpeg, rotation, crop)
+                        _manual.value = ManualShot(jpeg, rotation, crop, preview, found ?: hint ?: DEFAULT_CROP, signature)
+                    } catch (_: Throwable) {
+                        trigger.onCaptureFailed()
+                    }
+                    return
+                }
                 ScanRepository.addCapture(jpeg, rotation, crop, hint)
                 trigger.onCaptured(signature)
                 _ui.update { it.copy(shots = it.shots + 1, phase = Phase.WAIT_NEXT, progress = 0f) }
@@ -191,5 +232,10 @@ class ScanCamera(private val context: Context) {
                 trigger.onCaptureFailed()
             }
         })
+    }
+
+    private companion object {
+        /** Zuschnitt-Vorschlag, wenn kein Blatt erkannt wurde: das ganze Bild mit etwas Rand. */
+        val DEFAULT_CROP = Quad(Pt(0.08f, 0.08f), Pt(0.92f, 0.08f), Pt(0.92f, 0.92f), Pt(0.08f, 0.92f))
     }
 }
