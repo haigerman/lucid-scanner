@@ -37,7 +37,9 @@ class OpenCloudClient(
     private val http: OkHttpClient = defaultClient,
 ) {
     private val base: HttpUrl = parseServerUrl(serverUrl)
-        ?: throw OpenCloudException("Die OpenCloud-Adresse ist ungültig.")
+        ?: throw OpenCloudException(
+            if (isInsecure(serverUrl)) INSECURE_MESSAGE else "Die OpenCloud-Adresse ist ungültig."
+        )
     private val auth = Credentials.basic(user, token, Charsets.UTF_8)
     private var davRoot: HttpUrl? = null
 
@@ -147,7 +149,9 @@ class OpenCloudClient(
                     val drive = drives.optJSONObject(i) ?: continue
                     if (drive.optString("driveType") != "personal") continue
                     val dav = drive.optJSONObject("root")?.optString("webDavUrl").orEmpty()
-                    return dav.trimEnd('/').toHttpUrlOrNull() ?: continue
+                    // nur verschlüsselt: eine http-Adresse vom Server wird nicht übernommen
+                    val found = dav.trimEnd('/').toHttpUrlOrNull() ?: continue
+                    return if (found.isHttps) found else null
                 }
                 null
             } catch (_: Exception) {
@@ -186,7 +190,7 @@ class OpenCloudClient(
 
     companion object {
         private val defaultClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
+            secure(OkHttpClient.Builder())
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
@@ -243,13 +247,33 @@ class OpenCloudClient(
         /** Einheitliche Schreibweise eines Ordnerpfads: `Dokumente/Scans`, leer für die oberste Ebene. */
         fun normalizeFolder(folder: String): String = splitFolder(folder).joinToString("/")
 
-        /** Ergänzt `https://`, wenn kein Schema angegeben ist, und entfernt Schrägstriche am Ende. */
+        const val INSECURE_MESSAGE = "Nur verschlüsselte Verbindungen (https://) sind erlaubt."
+
+        /**
+         * Erzwingt Verschlüsselung: keine Weiterleitung von https auf http, und jeder Request
+         * ohne https wird abgewiesen, bevor er das Gerät verlässt.
+         */
+        fun secure(builder: OkHttpClient.Builder): OkHttpClient.Builder = builder
+            .followSslRedirects(false)
+            .addInterceptor { chain ->
+                val request = chain.request()
+                if (!request.url.isHttps) throw OpenCloudException(INSECURE_MESSAGE)
+                chain.proceed(request)
+            }
+
+        /**
+         * Ergänzt `https://`, wenn kein Schema angegeben ist, und entfernt Schrägstriche am Ende.
+         * Alles außer https gilt als ungültig – Benutzername und App-Token gehen nie unverschlüsselt übers Netz.
+         */
         fun parseServerUrl(input: String): HttpUrl? {
             var s = input.trim().trimEnd('/')
             if (s.isEmpty()) return null
             if (!s.contains("://")) s = "https://$s"
-            return s.toHttpUrlOrNull()
+            return s.toHttpUrlOrNull()?.takeIf { it.isHttps }
         }
+
+        /** Wurde ausdrücklich eine unverschlüsselte Adresse eingegeben (`http://…`)? */
+        fun isInsecure(input: String): Boolean = input.trim().startsWith("http://", ignoreCase = true)
 
         /** Zerlegt einen Ordnerpfad wie `/Dokumente/Scans/` in seine Teile. */
         fun splitFolder(folder: String): List<String> =

@@ -92,6 +92,10 @@ fun SettingsScreen(onBack: () -> Unit) {
                             onValueChange = { change(config.copy(serverUrl = it.trim())); testResult = null },
                             label = { Text("Adresse") },
                             placeholder = { Text("cloud.example.com") },
+                            isError = OpenCloudClient.isInsecure(config.serverUrl),
+                            supportingText = if (OpenCloudClient.isInsecure(config.serverUrl)) {
+                                { Text(OpenCloudClient.INSECURE_MESSAGE) }
+                            } else null,
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next, autoCorrectEnabled = false),
                             colors = fieldColors(),

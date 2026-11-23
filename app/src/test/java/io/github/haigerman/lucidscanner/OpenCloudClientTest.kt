@@ -1,14 +1,18 @@
 package io.github.haigerman.lucidscanner
 
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import io.github.haigerman.lucidscanner.cloud.OpenCloudClient
 import io.github.haigerman.lucidscanner.cloud.OpenCloudException
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -26,9 +30,20 @@ class OpenCloudClientTest {
     private val folders = HashSet<String>()
     private val files = HashMap<String, ByteArray>()
     private var graph = true
+    private var httpSpace = false
+    private var redirectToHttp = false
     private val expectedAuth = "Basic " + Base64.getEncoder().encodeToString("anna:geheim-token".toByteArray())
 
-    private val url get() = "http://127.0.0.1:${server.port}"
+    private val url get() = "https://localhost:${server.port}"
+
+    // Testserver mit eigenem Zertifikat; der Client vertraut nur diesem
+    private val cert = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+    private val trust = HandshakeCertificates.Builder().addTrustedCertificate(cert.certificate).build()
+    private val http = OpenCloudClient.secure(
+        OkHttpClient.Builder().sslSocketFactory(trust.sslSocketFactory(), trust.trustManager)
+    ).build()
+
+    private fun client(base: String = url, token: String = "geheim-token") = OpenCloudClient(base, "anna", token, http)
 
     @Before fun start() {
         server.dispatcher = object : Dispatcher() {
@@ -38,12 +53,15 @@ class OpenCloudClientTest {
                 synchronized(log) { log += "${request.method} $path" }
                 fun reply(code: Int, text: String = "") = MockResponse().setResponseCode(code).setBody(text)
                 if (request.getHeader("Authorization") != expectedAuth) return reply(401)
+                if (redirectToHttp && request.method == "PUT") {
+                    return MockResponse().setResponseCode(307).setHeader("Location", "http://localhost:${server.port}/plain")
+                }
                 val space = "/dav/spaces/abc\$123"
                 val legacy = "/remote.php/dav/files/anna"
                 return when {
                     path == "/graph/v1.0/me/drives" ->
                         if (graph) reply(200, """{"value":[{"driveType":"project","root":{"webDavUrl":"$url/dav/spaces/other"}},
-                            {"driveType":"personal","root":{"webDavUrl":"$url$space"}}]}""") else reply(404)
+                            {"driveType":"personal","root":{"webDavUrl":"${if (httpSpace) url.replace("https:", "http:") else url}$space"}}]}""") else reply(404)
                     path.startsWith(space) || path.startsWith(legacy) -> {
                         val rel = path.removePrefix(space).removePrefix(legacy)
                         val parent = rel.substringBeforeLast('/')
@@ -66,6 +84,7 @@ class OpenCloudClientTest {
                 }
             }
         }
+        server.useHttps(HandshakeCertificates.Builder().heldCertificate(cert).build().sslSocketFactory(), false)
         server.start()
     }
 
@@ -87,7 +106,7 @@ class OpenCloudClientTest {
     @Test fun uploadsIntoPersonalSpaceAndCreatesFolders() {
         val file = pdf()
         var progress = 0f
-        val remote = OpenCloudClient(url, "anna", "geheim-token")
+        val remote = client()
             .upload("/Dokumente/Scans & Belege/", "Scan 2026-11-13 10.15.pdf", file) { progress = it }
         assertEquals("/Dokumente/Scans & Belege/Scan 2026-11-13 10.15.pdf", remote)
         assertEquals(1f, progress, 0.001f)
@@ -98,7 +117,7 @@ class OpenCloudClientTest {
     }
 
     @Test fun secondUploadNeedsOneRequest() {
-        val client = OpenCloudClient(url, "anna", "geheim-token")
+        val client = client()
         val file = pdf(1000)
         client.upload("Scans", "a.pdf", file)
         log.clear()
@@ -107,7 +126,7 @@ class OpenCloudClientTest {
     }
 
     @Test fun neverOverwrites() {
-        val client = OpenCloudClient(url, "anna", "geheim-token")
+        val client = client()
         val file = pdf(1000)
         client.upload("Scans", "a.pdf", file)
         try {
@@ -120,18 +139,18 @@ class OpenCloudClientTest {
 
     @Test fun fallsBackToClassicWebDavPath() {
         graph = false
-        OpenCloudClient(url, "anna", "geheim-token").upload("Scans", "a.pdf", pdf(1000))
+        client().upload("Scans", "a.pdf", pdf(1000))
         assertTrue(log.contains("PUT /remote.php/dav/files/anna/Scans/a.pdf"))
     }
 
     @Test fun acceptsWebDavAddressOfASpace() {
-        OpenCloudClient("$url/dav/spaces/abc\$123/", "anna", "geheim-token").upload("", "a.pdf", pdf(1000))
+        client("$url/dav/spaces/abc\$123/").upload("", "a.pdf", pdf(1000))
         assertEquals(listOf("PUT /dav/spaces/abc\$123/a.pdf"), log)
     }
 
     @Test fun wrongTokenIsReported() {
         try {
-            OpenCloudClient(url, "anna", "falsch").upload("Scans", "a.pdf", pdf(1000))
+            client(token = "falsch").upload("Scans", "a.pdf", pdf(1000))
             fail()
         } catch (e: OpenCloudException) {
             assertTrue(e.message!!.contains("App-Token"))
@@ -142,7 +161,7 @@ class OpenCloudClientTest {
         val port = server.port
         server.shutdown()
         try {
-            OpenCloudClient("http://127.0.0.1:$port", "anna", "geheim-token").testConnection()
+            client("https://localhost:$port").testConnection()
             fail()
         } catch (e: OpenCloudException) {
             assertTrue(e.message!!.contains("nicht erreichbar"))
@@ -150,11 +169,11 @@ class OpenCloudClientTest {
     }
 
     @Test fun connectionTest() {
-        assertTrue(OpenCloudClient(url, "anna", "geheim-token").testConnection().contains("steht"))
+        assertTrue(client().testConnection().contains("steht"))
     }
 
     @Test fun browsesAndCreatesFolders() {
-        val client = OpenCloudClient(url, "anna", "geheim-token")
+        val client = client()
         assertEquals(emptyList<String>(), client.listFolders(""))
         client.createFolder("Dokumente/Steuer 2026")
         client.createFolder("Dokumente/Ärzte & Co")
@@ -186,9 +205,44 @@ class OpenCloudClientTest {
         assertEquals(listOf("Rechnungen 2026"), OpenCloudClient.parseFolders(xml))
     }
 
+    @Test fun httpAddressIsRefused() {
+        try {
+            OpenCloudClient("http://localhost:${server.port}", "anna", "geheim-token", http)
+            fail()
+        } catch (e: OpenCloudException) {
+            assertTrue(e.message!!.contains("https"))
+        }
+        assertTrue(log.isEmpty())
+    }
+
+    @Test fun httpWebDavAddressFromServerIsNotUsed() {
+        // Der Server meldet für den persönlichen Bereich eine http-Adresse: Die App nimmt sie nicht,
+        // sondern bleibt beim verschlüsselten Standardpfad.
+        httpSpace = true
+        client().upload("Scans", "a.pdf", pdf(1000))
+        assertTrue(log.contains("PUT /remote.php/dav/files/anna/Scans/a.pdf"))
+        assertTrue(log.none { it.contains("/dav/spaces/") })
+    }
+
+    @Test fun redirectToHttpIsNotFollowed() {
+        redirectToHttp = true
+        try {
+            client().upload("Scans", "a.pdf", pdf(1000))
+            fail()
+        } catch (e: OpenCloudException) {
+            // erwartet: keine Anfrage über http, der Token bleibt geschützt
+        }
+        assertTrue(log.none { it.contains("/plain") })
+    }
+
     @Test fun addressAndNameHelpers() {
         assertEquals("https://cloud.example.com/", OpenCloudClient.parseServerUrl(" cloud.example.com/ ").toString())
-        assertEquals("http://192.168.1.5:9200/", OpenCloudClient.parseServerUrl("http://192.168.1.5:9200").toString())
+        assertEquals("https://192.168.1.5:9200/", OpenCloudClient.parseServerUrl("https://192.168.1.5:9200").toString())
+        // unverschlüsselt ist nicht erlaubt
+        assertEquals(null, OpenCloudClient.parseServerUrl("http://cloud.example.com"))
+        assertEquals(null, OpenCloudClient.parseServerUrl("HTTP://192.168.1.5:9200"))
+        assertTrue(OpenCloudClient.isInsecure(" http://cloud.example.com"))
+        assertFalse(OpenCloudClient.isInsecure("cloud.example.com"))
         assertEquals(null, OpenCloudClient.parseServerUrl("  "))
         assertEquals(listOf("a", "b c"), OpenCloudClient.splitFolder("/a//b c/../"))
         assertEquals("a/b c", OpenCloudClient.normalizeFolder(" /a//b c/ "))

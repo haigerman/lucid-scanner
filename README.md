@@ -50,6 +50,10 @@ Auswahl stehen. **＋ Ordner wählen** öffnet den Ordnerbrowser (dort lässt si
 Ordner anlegen), **Pfad eingeben** nimmt einen Pfad wie `Dokumente/Scans` direkt an – fehlt der
 Ordner, wird er beim ersten Ablegen angelegt. **✕** entfernt einen Favoriten wieder.
 
+Die App spricht mit OpenCloud **ausschließlich über HTTPS**: Adressen mit `http://` werden
+abgelehnt, Weiterleitungen auf `http://` nicht befolgt, und Android blockt unverschlüsselten
+Verkehr für die App grundsätzlich. Benutzername und App-Token gehen so nie im Klartext übers Netz.
+
 OpenCloud meldet App-Tokens zusammen mit dem Benutzernamen an – deshalb braucht die App beides.
 Der Token wird auf dem Gerät verschlüsselt gespeichert (Schlüssel im Android-Keystore) und ist
 von Backups ausgenommen.

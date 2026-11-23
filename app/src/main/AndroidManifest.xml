@@ -6,6 +6,7 @@
 
     <uses-feature android:name="android.hardware.camera.any" />
 
+    <!-- Unverschlüsselter Verkehr ist verboten: Android blockt jede http-Verbindung. -->
     <!-- allowBackup aus: der App-Token soll in keinem Backup landen -->
     <application
         android:allowBackup="false"
